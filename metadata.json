@@ -1,0 +1,5 @@
+{
+  "name": "SlideLens AI",
+  "description": "An intelligent PDF presentation analyzer that uses Gemini 3 Pro to explain each slide in detail.",
+  "requestFramePermissions": []
+}
