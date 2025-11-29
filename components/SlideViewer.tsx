@@ -1,6 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -496,7 +499,7 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
               ) : (
                 <div className="markdown-content text-slate-800">
                   {currentSlide.explanation ? (
-                     <ReactMarkdown>{currentSlide.explanation}</ReactMarkdown>
+                     <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{currentSlide.explanation}</ReactMarkdown>
                   ) : (
                     <div className="text-center text-slate-400 mt-20">
                       <p>Waiting for analysis...</p>

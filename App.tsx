@@ -8,6 +8,8 @@ import { processPdf } from './services/pdfService';
 import { savePresentation } from './services/storageService';
 import { authService, GoogleUser } from './services/authService'; // Import Service
 import { AppState, Presentation } from './types';
+import 'katex/dist/katex.min.css';
+
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>('LANDING');
