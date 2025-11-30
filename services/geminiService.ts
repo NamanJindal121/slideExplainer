@@ -17,7 +17,7 @@ async function urlToData(url: string): Promise<string> {
 
 export const analyzeSlideImage = async (imageUrl: string, promptText: string) => {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // or gemini-1.5-pro
+    const model = genAI.getGenerativeModel({ model: "gemini-3-pro-preview" }); // or gemini-1.5-pro
 
     // 1. CHECK: Is this a URL? If so, convert it.
     let base64Data = imageUrl;
