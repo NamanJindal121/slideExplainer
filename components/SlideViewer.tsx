@@ -118,47 +118,31 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
   // --- Queue Processing Logic ---
   useEffect(() => {
     const processQueue = async () => {
+      // 1. Check if the engine is already busy
       const isAnyLoading = slides.some(s => s.status === 'LOADING');
       if (isAnyLoading) return;
 
-      let nextSlideId: string | null = null;
-
-      // 1. Priority Queue
+      // 2. STRICT MODE: Only process items explicitly in the queue
       if (queue.length > 0) {
         const id = queue[0];
         const s = slides.find(s => s.id === id);
-        if (s && s.status !== 'SUCCESS') {
-          nextSlideId = id;
-        } else {
-          // Clean up queue if done or invalid
-          setQueue(prev => prev.slice(1));
-          return;
-        }
-      } 
-      // 2. Current Slide (if IDLE)
-      else if (slides[currentIndex].status === 'IDLE' && !processingRef.current.has(slides[currentIndex].id)) {
-        nextSlideId = slides[currentIndex].id;
-      }
-      // 3. Sequential
-      else {
-        const nextIdle = slides.find(s => s.status === 'IDLE');
-        if (nextIdle && !processingRef.current.has(nextIdle.id)) {
-          nextSlideId = nextIdle.id;
-        }
-      }
 
-      if (nextSlideId && !processingRef.current.has(nextSlideId)) {
-        // RATE LIMIT FIX: Add delay before processing to keep Gemini 3 Pro happy
-        // We only delay if it's an automatic sequential trigger or queue. 
-        // User-triggered actions might still want to try immediately, but we'll safeguard here.
-        await new Promise(resolve => setTimeout(resolve, 4000));
-        
-        await triggerAnalysis(nextSlideId);
+        // If the slide exists and hasn't been analyzed yet
+        if (s && s.status !== 'SUCCESS') {
+          // Prevent double-triggering
+          if (!processingRef.current.has(id)) {
+            // Small delay to keep API happy, but faster than auto-mode
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await triggerAnalysis(id);
+          }
+        } else {
+          // If slide is done or invalid, remove from queue to unblock next item
+          setQueue(prev => prev.slice(1));
+        }
       }
     };
-
     processQueue();
-  }, [slides, currentIndex, queue]);
+  }, [slides, queue]);
 
   const triggerAnalysis = async (slideId: string, customPrompt?: string) => {
     const slideIndex = slides.findIndex(s => s.id === slideId);
