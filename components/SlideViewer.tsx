@@ -180,6 +180,7 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
       handleSave(slidesCopySuccess);
       trackAnalysisUsage(currentUser.id, currentUser.name, usage.totalTokenCount);
       
+      
     } catch (error) {
       console.error(error);
       const slidesCopyError = [...slidesCopyLoading];

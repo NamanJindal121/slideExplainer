@@ -74,10 +74,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNew, onOpen, onLog
         </div>
       </header>
 
-      {/* CHANGE 2: 'overflow-y-auto' makes ONLY this section scrollable */}
       <main className="flex-1 overflow-y-auto w-full">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 min-h-full flex flex-col">
+          <div className="flex-1">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
             <div>
               <h2 className="text-2xl font-bold text-slate-900">Your Presentations</h2>
@@ -208,6 +207,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNew, onOpen, onLog
               })}
             </div>
           )}
+        </div>
+          <div className="mt-auto pt-6 border-t border-gray-100 text-center">
+            <p className="text-slate-400 text-sm font-medium flex items-center justify-center gap-1">
+              Made with <span className="text-red-400">❤️</span> by Naman Jindal
+            </p>
+          </div>
+
         </div>
       </main>
     </div>

@@ -174,13 +174,12 @@ export default function App() {
         <div className="bg-white/80 border border-white rounded-3xl p-8 backdrop-blur-xl shadow-2xl shadow-blue-900/10 relative group hover:border-blue-200 transition-all duration-300">
           
           {appState === 'LANDING' ? (
-            <div className="flex flex-col items-center py-8">
+            <div className="flex flex-col items-center py-2">
               <h3 className="text-xl font-semibold text-slate-900 mb-2">Welcome Back</h3>
               <p className="text-slate-500 text-center mb-8 max-w-xs">
                 Sign in to access your presentation history and analyze new documents.
               </p>
               
-              {/* 3. CHANGED: Custom Button instead of GoogleLogin Component */}
               <div className="w-full flex justify-center">
                 {isLoading ? (
                   <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
@@ -253,6 +252,13 @@ export default function App() {
           </div>
         )}
       </div>
+
+      <footer className="absolute bottom-4 w-full text-center z-10">
+        <p className="text-slate-400 text-sm font-medium flex items-center justify-center gap-1">
+          Made with <span className="text-red-400 animate-pulse">❤️</span> by Naman Jindal
+        </p>
+      </footer>
+      
     </div>
   );
 }

@@ -44,7 +44,12 @@ export const analyzeSlideImage = async (imageUrl: string, promptText: string) =>
     const response = await result.response;
     return {
       text: response.text(),
-      usage: result.response.usageMetadata || { totalTokenCount: 0 }
+      // We populate all fields so TypeScript is happy
+      usage: result.response.usageMetadata || { 
+        promptTokenCount: 0, 
+        candidatesTokenCount: 0, 
+        totalTokenCount: 0 
+      }
     };
     
   } catch (error) {
