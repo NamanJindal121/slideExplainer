@@ -57,6 +57,12 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // 1. Safety Check: Ensure user is logged in before allowing upload
+    if (!user) {
+      setError('You must be logged in to upload a presentation.');
+      return;
+    }
+
     if (file.type !== 'application/pdf') {
       setError('Please upload a valid PDF file.');
       return;
@@ -68,13 +74,19 @@ export default function App() {
     try {
       const extractedSlides = await processPdf(file);
       
+      // 2. Add Author Details here
       const newPresentation: Presentation = {
         id: crypto.randomUUID(),
         title: file.name.replace('.pdf', ''),
         thumbnailUrl: extractedSlides[0]?.imageUrl || '',
         lastModified: Date.now(),
         slideCount: extractedSlides.length,
-        slides: extractedSlides
+        slides: extractedSlides,
+        
+        // NEW FIELDS
+        authorId: user.uid,
+        authorName: user.name || 'Anonymous',
+        authorPhoto: user.photoURL || undefined
       };
 
       await savePresentation(newPresentation);
@@ -110,7 +122,7 @@ export default function App() {
       id: user.uid,             
       name: user.name || 'User',
       email: user.email || '',
-      avatarUrl: user.photoURL || ''
+      avatarUrl: user.photoURL || undefined
     };
 
     return (

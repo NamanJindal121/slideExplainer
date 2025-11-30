@@ -29,4 +29,7 @@ export interface Presentation {
   lastModified: number;
   slideCount: number;
   slides: Slide[];
+  authorId: string;
+  authorName: string;
+  authorPhoto?: string;
 }

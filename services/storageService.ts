@@ -1,75 +1,93 @@
-
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  getDocs, 
+  getDoc, 
+  deleteDoc, 
+  query, 
+  orderBy 
+} from 'firebase/firestore';
+import { 
+  ref, 
+  uploadString, 
+  getDownloadURL, 
+  deleteObject, 
+  listAll 
+} from 'firebase/storage';
+import { db, storage, auth } from './firebase';
 import { Presentation } from '../types';
 
-const DB_NAME = 'SlideLensDB';
-const STORE_NAME = 'presentations';
-const VERSION = 1;
+// Helper to get current user ID
+const getUserId = () => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("User must be logged in.");
+  return user.uid;
+};
 
-// Helper to open DB
-const openDB = (): Promise<IDBDatabase> => {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, VERSION);
-
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-      }
-    };
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+// 1. Upload to a SHARED storage path
+const uploadImage = async (presentationId: string, slideIndex: number, dataUrl: string) => {
+  // We remove 'users/{uid}' from the path so it's easier to access globally
+  const imageRef = ref(storage, `public_presentations/${presentationId}/slide_${slideIndex}.jpg`);
+  
+  await uploadString(imageRef, dataUrl, 'data_url');
+  return getDownloadURL(imageRef);
 };
 
 export const savePresentation = async (presentation: Presentation): Promise<void> => {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.put(presentation);
+  const userId = getUserId();
+  const userName = auth.currentUser?.displayName || 'Anonymous';
+  const userPhoto = auth.currentUser?.photoURL || '';
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
+  // NEW: Save to root 'presentations' collection instead of under 'users'
+  const presRef = doc(db, 'presentations', presentation.id);
+
+  try {
+    const slidePromises = presentation.slides.map(async (slide, index) => {
+      if (slide.imageUrl.startsWith('http')) return slide;
+      const publicUrl = await uploadImage(presentation.id, index, slide.imageUrl);
+      return { ...slide, imageUrl: publicUrl };
+    });
+
+    const updatedSlides = await Promise.all(slidePromises);
+
+    const cloudPresentation = {
+      ...presentation,
+      thumbnailUrl: updatedSlides[0]?.imageUrl || '',
+      slides: updatedSlides,
+      // Metadata to identify the author
+      authorId: presentation.authorId || userId,
+      authorName: presentation.authorName || userName,
+      authorPhoto: presentation.authorPhoto || userPhoto
+    };
+
+    await setDoc(presRef, cloudPresentation);
+    
+  } catch (error) {
+    console.error("Error saving presentation:", error);
+    throw error;
+  }
 };
 
 export const getPresentations = async (): Promise<Presentation[]> => {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.getAll();
+  // Query the global collection
+  const presentationsRef = collection(db, 'presentations');
+  const q = query(presentationsRef, orderBy('lastModified', 'desc'));
 
-    request.onsuccess = () => {
-      // Sort by last modified desc
-      const results = request.result as Presentation[];
-      resolve(results.sort((a, b) => b.lastModified - a.lastModified));
-    };
-    request.onerror = () => reject(request.error);
-  });
-};
-
-export const getPresentation = async (id: string): Promise<Presentation | undefined> => {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.get(id);
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => doc.data() as Presentation);
 };
 
 export const deletePresentation = async (id: string): Promise<void> => {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.delete(id);
+  // Note: Firestore Security Rules will prevent non-owners from doing this
+  await deleteDoc(doc(db, 'presentations', id));
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
+  // Cleanup storage
+  const folderRef = ref(storage, `public_presentations/${id}`);
+  try {
+    const fileList = await listAll(folderRef);
+    await Promise.all(fileList.items.map(fileRef => deleteObject(fileRef)));
+  } catch (error) {
+    console.warn("Cleanup warning:", error);
+  }
 };
