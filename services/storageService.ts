@@ -6,7 +6,9 @@ import {
   getDoc, 
   deleteDoc, 
   query, 
-  orderBy 
+  orderBy,
+  increment, 
+  serverTimestamp
 } from 'firebase/firestore';
 import { 
   ref, 
@@ -89,5 +91,22 @@ export const deletePresentation = async (id: string): Promise<void> => {
     await Promise.all(fileList.items.map(fileRef => deleteObject(fileRef)));
   } catch (error) {
     console.warn("Cleanup warning:", error);
+  }
+};
+
+export const trackAnalysisUsage = async (userId: string, userName: string, tokens: number) => {
+  if (!userId) return;
+
+  const statsRef = doc(db, 'usage_stats', userId);
+
+  try {
+    await setDoc(statsRef, {
+      userName: userName,
+      totalSlidesAnalyzed: increment(1),
+      totalTokensUsed: increment(tokens), // NEW: Track cost
+      lastActive: serverTimestamp()
+    }, { merge: true });
+  } catch (error) {
+    console.error("Failed to track usage:", error);
   }
 };

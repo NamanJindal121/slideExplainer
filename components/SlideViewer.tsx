@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { Slide, Presentation, User } from '../types';
 import { analyzeSlideImage } from '../services/geminiService';
-import { savePresentation } from '../services/storageService';
+import { savePresentation, trackAnalysisUsage } from '../services/storageService';
 
 interface SlideViewerProps {
   initialPresentation: Presentation;
@@ -161,13 +161,13 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
       const slide = slidesCopyLoading[slideIndex];
       const promptToUse = customPrompt || slide.customPrompt || "Explain this slide in detail. Use bullet points and clear formatting.";
       
-      const explanation = await analyzeSlideImage(slide.imageUrl, promptToUse);
+      const { text, usage } = await analyzeSlideImage(slide.imageUrl, promptToUse);
 
       // Update Success
       const slidesCopySuccess = [...slidesCopyLoading];
       slidesCopySuccess[slideIndex] = { 
         ...slidesCopySuccess[slideIndex], 
-        explanation, 
+        explanation: text, 
         status: 'SUCCESS',
         customPrompt: promptToUse,
 
@@ -178,7 +178,8 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
         }
       };
       handleSave(slidesCopySuccess);
-
+      trackAnalysisUsage(currentUser.id, currentUser.name, usage.totalTokenCount);
+      
     } catch (error) {
       console.error(error);
       const slidesCopyError = [...slidesCopyLoading];

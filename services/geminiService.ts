@@ -42,7 +42,10 @@ export const analyzeSlideImage = async (imageUrl: string, promptText: string) =>
     // 3. Send Request
     const result = await model.generateContent([prompt, imagePart]);
     const response = await result.response;
-    return response.text();
+    return {
+      text: response.text(),
+      usage: result.response.usageMetadata || { totalTokenCount: 0 }
+    };
     
   } catch (error) {
     console.error("Gemini Analysis Failed:", error);
