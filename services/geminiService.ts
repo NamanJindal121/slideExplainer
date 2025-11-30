@@ -1,51 +1,51 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const getClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("API Key not found in environment variables");
-  }
-  return new GoogleGenAI({ apiKey });
-};
+// Initialize Gemini
+const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
 
-export const analyzeSlideImage = async (base64DataUrl: string, prompt: string): Promise<string> => {
+// Helper: Convert Cloud URL to Base64
+async function urlToData(url: string): Promise<string> {
+  const response = await fetch(url);
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+export const analyzeSlideImage = async (imageUrl: string, promptText: string) => {
   try {
-    const ai = getClient();
-    
-    // Extract base64 string (remove 'data:image/jpeg;base64,' prefix)
-    const base64Data = base64DataUrl.split(',')[1];
-    if (!base64Data) throw new Error("Invalid image data");
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // or gemini-1.5-pro
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview', // Using Pro for high quality image analysis
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: 'image/jpeg',
-              data: base64Data
-            }
-          },
-          {
-            text: prompt
-          }
-        ]
-      },
-      config: {
-        // Optional: system instruction could be added here if needed globally
-        // systemInstruction: "You are a helpful teaching assistant.",
-        thinkingConfig: { thinkingBudget: 1024 } // Giving it some room to think for detailed explanations
-      }
-    });
-
-    if (!response.text) {
-      throw new Error("No response text received from Gemini");
+    // 1. CHECK: Is this a URL? If so, convert it.
+    let base64Data = imageUrl;
+    if (imageUrl.startsWith('http')) {
+      base64Data = await urlToData(imageUrl);
     }
 
-    return response.text;
+    // 2. Prepare the image data for Gemini
+    // Remove the "data:image/jpeg;base64," prefix if present
+    const cleanBase64 = base64Data.split(',')[1]; 
+    
+    // We assume JPEG, but you could extract the real type from the blob if needed
+    const imagePart = {
+      inlineData: {
+        data: cleanBase64,
+        mimeType: "image/jpeg",
+      },
+    };
 
+    const prompt = promptText || "Explain this slide in detail.";
+    
+    // 3. Send Request
+    const result = await model.generateContent([prompt, imagePart]);
+    const response = await result.response;
+    return response.text();
+    
   } catch (error) {
-    console.error("Gemini API Error:", error);
+    console.error("Gemini Analysis Failed:", error);
     throw error;
   }
 };
