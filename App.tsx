@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileText, Loader2, AlertCircle, ArrowLeft } from 'lucide-react';
-import { GoogleLogin } from '@react-oauth/google'; // Import the component
-
+import { Upload, FileText, Loader2, AlertCircle, ArrowLeft, LogIn } from 'lucide-react';
 import { SlideViewer } from './components/SlideViewer';
 import { Dashboard } from './components/Dashboard';
 import { processPdf } from './services/pdfService';
@@ -19,32 +17,30 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 1. Check for existing session on mount
   useEffect(() => {
-    const storedUser = authService.getCurrentUser();
-    if (storedUser) {
-      setUser(storedUser);
-      // If we are on landing and have a user, go to dashboard
-      if (appState === 'LANDING') {
+    // This subscription automatically handles page refreshes and session persistence
+    const unsubscribe = authService.onUserChanged((user) => {
+      setUser(user);
+      if (user && appState === 'LANDING') {
         setAppState('DASHBOARD');
+      } else if (!user && appState !== 'LANDING') {
+        setAppState('LANDING'); // Kick back to landing if logged out
       }
-    }
-  }, []);
+    });
 
-  // 2. Auth Handlers
-  const handleLoginSuccess = (credentialResponse: any) => {
+    // Cleanup subscription on unmount
+    return () => unsubscribe();
+  }, [appState]);
+
+  // 2. CHANGED: Simple Async Login Handler
+  const handleLoginClick = async () => {
     setIsLoading(true);
+    setError(null);
     try {
-      const userData = authService.login(credentialResponse);
-      if (userData) {
-        setUser(userData);
-        setAppState('DASHBOARD');
-        setError(null);
-      } else {
-        setError('Failed to decode user information');
-      }
+      await authService.loginWithGoogle();
+      // No need to setUser here; the useEffect listener above will catch the change
     } catch (e) {
-      setError('Login failed');
+      setError('Login failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -109,13 +105,12 @@ export default function App() {
   }
   
   if (appState === 'DASHBOARD' && user) {
-    // 1. Map known Google fields to your App's User shape
-    // We know 'user' is GoogleUser, so we access .sub and .picture directly
+    // Map the new Firebase fields to your Dashboard
     const mappedUser = {
-      id: user.sub,              // Google's unique ID is called 'sub'
-      name: user.name,
-      email: user.email,
-      avatarUrl: user.picture    // Google calls it 'picture', your app wants 'avatarUrl'
+      id: user.uid,             
+      name: user.name || 'User',
+      email: user.email || '',
+      avatarUrl: user.photoURL || ''
     };
 
     return (
@@ -123,10 +118,11 @@ export default function App() {
         user={mappedUser}
         onNew={() => setAppState('UPLOAD')}
         onOpen={openPresentation}
-        onLogout={handleLogout}
+        onLogout={() => authService.logout()} // Ensure this is async
       />
     );
   }
+
   // Common Layout for Landing & Upload
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gradient-to-br from-blue-50 via-white to-blue-50 relative overflow-hidden">
@@ -161,20 +157,22 @@ export default function App() {
                 Sign in to access your presentation history and analyze new documents.
               </p>
               
-              {/* GOOGLE LOGIN BUTTON */}
+              {/* 3. CHANGED: Custom Button instead of GoogleLogin Component */}
               <div className="w-full flex justify-center">
                 {isLoading ? (
                   <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
                 ) : (
-                  <GoogleLogin
-                    onSuccess={handleLoginSuccess}
-                    onError={() => setError('Login Failed')}
-                    useOneTap
-                    shape="rectangular"
-                    theme="outline"
-                    size="large"
-                    width="300" 
-                  />
+                  <button
+                    onClick={handleLoginClick}
+                    className="flex items-center gap-3 px-6 py-3 bg-white border border-slate-200 rounded-lg shadow-sm hover:bg-slate-50 hover:shadow-md transition-all text-slate-700 font-medium"
+                  >
+                    <img 
+                      src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" 
+                      alt="Google" 
+                      className="w-5 h-5"
+                    />
+                    Sign in with Google
+                  </button>
                 )}
               </div>
 

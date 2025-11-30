@@ -1,59 +1,58 @@
-// services/authService.ts
-import { CredentialResponse } from '@react-oauth/google';
-import { jwtDecode } from 'jwt-decode';
+import { 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged, 
+  User 
+} from 'firebase/auth';
+import { auth, googleProvider } from './firebase';
 
-// Define the shape of the user data returned by Google
+// We map Firebase's "User" type to your specific needs
 export interface GoogleUser {
-  name: string;
-  email: string;
-  picture: string;
-  sub: string; // Google's unique ID for the user
+  uid: string;
+  name: string | null;
+  email: string | null;
+  photoURL: string | null;
 }
 
 class AuthService {
-  // 1. Handle the response from Google
-  login(response: CredentialResponse): GoogleUser | null {
-    if (!response.credential) {
-      console.error('No credential received');
-      return null;
-    }
-
+  // 1. Trigger the Google Popup
+  async loginWithGoogle(): Promise<GoogleUser | null> {
     try {
-      // Decode the JWT token to get user info
-      const decoded: GoogleUser = jwtDecode(response.credential);
-      
-      // Save to local storage (optional: for persistence)
-      this.saveSession(response.credential);
-      
-      return decoded;
+      const result = await signInWithPopup(auth, googleProvider);
+      return this.mapUser(result.user);
     } catch (error) {
-      console.error('Error decoding token:', error);
+      console.error('Login failed:', error);
       return null;
     }
   }
 
-  // 2. Save the token to LocalStorage
-  private saveSession(token: string): void {
-    localStorage.setItem('google_token', token);
-  }
-
-  // 3. Check if a user is already logged in (e.g., on page refresh)
-  getCurrentUser(): GoogleUser | null {
-    const token = localStorage.getItem('google_token');
-    if (!token) return null;
-
+  // 2. Logout
+  async logout(): Promise<void> {
     try {
-      return jwtDecode<GoogleUser>(token);
-    } catch {
-      return null;
+      await signOut(auth);
+    } catch (error) {
+      console.error('Logout failed:', error);
     }
   }
 
-  // 4. Logout
-  logout(): void {
-    localStorage.removeItem('google_token');
+  // 3. Auth State Listener (Replaces manual localStorage check)
+  // This callback fires whenever the user logs in, logs out, or the app refreshes
+  onUserChanged(callback: (user: GoogleUser | null) => void) {
+    return onAuthStateChanged(auth, (firebaseUser) => {
+      const user = firebaseUser ? this.mapUser(firebaseUser) : null;
+      callback(user);
+    });
+  }
+
+  // Helper to format Firebase user to your app's interface
+  private mapUser(user: User): GoogleUser {
+    return {
+      uid: user.uid,
+      name: user.displayName,
+      email: user.email,
+      photoURL: user.photoURL
+    };
   }
 }
 
-// Export a singleton instance
 export const authService = new AuthService();
