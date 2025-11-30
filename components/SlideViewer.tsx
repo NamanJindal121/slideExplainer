@@ -21,16 +21,17 @@ import {
   GripVertical,
   Save
 } from 'lucide-react';
-import { Slide, Presentation } from '../types';
+import { Slide, Presentation, User } from '../types';
 import { analyzeSlideImage } from '../services/geminiService';
 import { savePresentation } from '../services/storageService';
 
 interface SlideViewerProps {
   initialPresentation: Presentation;
   onBack: () => void;
+  currentUser: User;
 }
 
-export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, onBack }) => {
+export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, onBack, currentUser }) => {
   const [presentation, setPresentation] = useState<Presentation>(initialPresentation);
   const slides = presentation.slides;
   
@@ -168,7 +169,13 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
         ...slidesCopySuccess[slideIndex], 
         explanation, 
         status: 'SUCCESS',
-        customPrompt: promptToUse
+        customPrompt: promptToUse,
+
+        analyzedBy: {
+          userId: currentUser.id,
+          userName: currentUser.name,
+          timestamp: Date.now()
+        }
       };
       handleSave(slidesCopySuccess);
 

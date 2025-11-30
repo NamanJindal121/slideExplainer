@@ -108,10 +108,21 @@ export default function App() {
 
   // Render Logic
   if (appState === 'VIEWER' && currentPresentation) {
+    // Create mapped user object
+    const currentUser = user ? {
+      id: user.uid,
+      name: user.name || 'Anonymous',
+      email: user.email || '',
+      avatarUrl: user.photoURL || ''
+    } : null;
+
+    if (!currentUser) return null;
+
     return (
       <SlideViewer 
         initialPresentation={currentPresentation} 
-        onBack={() => setAppState('DASHBOARD')} 
+        onBack={() => setAppState('DASHBOARD')}
+        currentUser={currentUser} // <--- Passing the user here
       />
     );
   }

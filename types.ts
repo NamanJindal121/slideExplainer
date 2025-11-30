@@ -6,6 +6,11 @@ export interface Slide {
   explanation: string | null;
   status: 'IDLE' | 'LOADING' | 'SUCCESS' | 'ERROR';
   customPrompt?: string;
+  analyzedBy?: {
+    userId: string;
+    userName: string;
+    timestamp: number;
+  };
 }
 
 export type AppState = 'LANDING' | 'DASHBOARD' | 'UPLOAD' | 'VIEWER';
