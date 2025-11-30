@@ -1,10 +1,7 @@
-
 import React, { useEffect, useState } from 'react';
 import { Plus, Clock, FileText, ChevronRight, Trash2, LogOut, Search, Lock } from 'lucide-react';
 import { Presentation, User } from '../types';
 import { getPresentations, deletePresentation } from '../services/storageService';
-import { savePresentation } from '../services/storageService'; // The NEW firebase service
-import { auth } from '../services/firebase';
 
 interface DashboardProps {
   user: User;
@@ -45,76 +42,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNew, onOpen, onLog
     p.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // TEMPORARY MIGRATION SCRIPT
-  const migrateLocalData = async () => {
-    if (!user || !confirm('Migrate local presentations to Cloud? This may take a minute.')) return;
-    setIsLoading(true);
-
-    try {
-      // 1. Manually Open the OLD Local DB
-      const dbRequest = indexedDB.open('SlideLensDB', 1); // Use the name from your old service
-      
-      const localPresentations: any[] = await new Promise((resolve, reject) => {
-        dbRequest.onsuccess = () => {
-          const db = dbRequest.result;
-          if (!db.objectStoreNames.contains('presentations')) {
-            resolve([]); // Store doesn't exist
-            return;
-          }
-          const tx = db.transaction('presentations', 'readonly');
-          const store = tx.objectStore('presentations');
-          const req = store.getAll();
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error);
-        };
-        dbRequest.onerror = () => reject(dbRequest.error);
-      });
-
-      console.log(`Found ${localPresentations.length} local presentations.`);
-
-      // 2. Process and Upload to Firebase
-      let count = 0;
-      for (const localPres of localPresentations) {
-        
-        // Skip if this ID already exists in your displayed list (optional check)
-        if (presentations.some(p => p.id === localPres.id)) {
-           console.log(`Skipping ${localPres.title}, already exists.`);
-           continue;
-        }
-
-        console.log(`Migrating: ${localPres.title}...`);
-
-        // Inject missing Author Data (since local data didn't have it)
-        const cloudReadyPres = {
-          ...localPres,
-          authorId: user.id,
-          authorName: user.name,
-          authorPhoto: user.avatarUrl,
-          // Ensure we don't accidentally carry over strict local paths if any
-        };
-
-        // validation: ensure it matches the Type expected by savePresentation
-        // savePresentation handles the Image Upload logic automatically!
-        // It looks for Base64 strings in 'imageUrl' and uploads them.
-        await savePresentation(cloudReadyPres);
-        count++;
-      }
-
-      alert(`Successfully migrated ${count} presentations to the cloud!`);
-      loadPresentations(); // Refresh the dashboard list
-
-    } catch (err) {
-      console.error("Migration failed:", err);
-      alert("Migration failed. Check console for details.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-20">
+    // CHANGE 1: 'h-screen' locks height, 'overflow-hidden' prevents window scrollbars
+    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+      
+      {/* Header - We removed 'sticky' because the header is now physically separated from the scrolling area */}
+      <header className="bg-white border-b border-gray-200 shrink-0 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-brand-600 p-2 rounded-lg">
@@ -141,24 +74,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNew, onOpen, onLog
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
-        
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900">Your Presentations</h2>
-            <p className="text-slate-500">Manage your analyzed documents</p>
-          </div>
-
-          <div className="flex gap-3">
-            {/* TEMPORARY MIGRATION BUTTON */}
-            <button 
-              onClick={migrateLocalData}
-              className="bg-gray-800 text-white px-4 py-3 rounded-xl font-medium hover:bg-gray-700"
-            >
-              Migrate Old Data
-            </button>
-
+      {/* CHANGE 2: 'overflow-y-auto' makes ONLY this section scrollable */}
+      <main className="flex-1 overflow-y-auto w-full">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-900">Your Presentations</h2>
+              <p className="text-slate-500">Manage your analyzed documents</p>
+            </div>
             <button 
               onClick={onNew}
               className="flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-700 text-white px-6 py-3 rounded-xl font-medium shadow-lg shadow-brand-600/20 transition-all hover:scale-105"
@@ -167,125 +91,125 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNew, onOpen, onLog
               New Analysis
             </button>
           </div>
-        </div>
 
-        {/* Search */}
-        <div className="mb-8 relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Search presentations..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-12 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none transition-shadow shadow-sm"
-          />
-        </div>
-
-        {isLoading ? (
-          <div className="flex justify-center py-20">
-            <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
+          {/* Search */}
+          <div className="mb-8 relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+            <input 
+              type="text" 
+              placeholder="Search presentations..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none transition-shadow shadow-sm"
+            />
           </div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-300">
-            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
-              <FileText className="w-8 h-8 text-slate-300" />
+
+          {isLoading ? (
+            <div className="flex justify-center py-20">
+              <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
             </div>
-            <h3 className="text-lg font-medium text-slate-900 mb-1">No presentations yet</h3>
-            <p className="text-slate-500 mb-6">Upload a PDF to get started with AI analysis.</p>
-            <button 
-              onClick={onNew}
-              className="text-brand-600 font-medium hover:underline"
-            >
-              Start new analysis
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filtered.map((item) => {
-              // Helper to check ownership
-              const isOwner = item.authorId === user.id;
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-300">
+              <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <FileText className="w-8 h-8 text-slate-300" />
+              </div>
+              <h3 className="text-lg font-medium text-slate-900 mb-1">No presentations yet</h3>
+              <p className="text-slate-500 mb-6">Upload a PDF to get started with AI analysis.</p>
+              <button 
+                onClick={onNew}
+                className="text-brand-600 font-medium hover:underline"
+              >
+                Start new analysis
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filtered.map((item) => {
+                const isOwner = item.authorId === user.id;
 
-              return (
-                <div 
-                  key={item.id}
-                  onClick={() => onOpen(item)}
-                  className="group bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-xl hover:border-brand-200 transition-all duration-300 cursor-pointer flex flex-col h-full"
-                >
-                  {/* Thumbnail Section */}
-                  <div className="h-48 bg-gray-100 relative overflow-hidden">
-                    <img 
-                      src={item.thumbnailUrl} 
-                      alt={item.title}
-                      className="w-full h-full object-cover opacity-90 group-hover:scale-105 transition-transform duration-500"
-                    />
-                    {/* Collaborative Badge */}
-                    {!isOwner && (
-                       <div className="absolute top-3 right-3 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full font-medium border border-white/20">
-                         Community
-                       </div>
-                    )}
-                  </div>
-                  
-                  <div className="p-5 flex-1 flex flex-col">
-                    <h3 className="font-bold text-slate-900 mb-2 line-clamp-1 group-hover:text-brand-600 transition-colors">
-                      {item.title}
-                    </h3>
-                    
-                    {/* NEW: Author Info Row */}
-                    <div className="flex items-center gap-2 mb-4">
-                       {item.authorPhoto ? (
-                         <img src={item.authorPhoto} alt="Author" className="w-5 h-5 rounded-full border border-gray-200" />
-                       ) : (
-                         <div className="w-5 h-5 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center text-[10px] font-bold">
-                           {(item.authorName || '?').charAt(0)}
+                return (
+                  <div 
+                    key={item.id}
+                    onClick={() => onOpen(item)}
+                    className="group bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-xl hover:border-brand-200 transition-all duration-300 cursor-pointer flex flex-col h-full"
+                  >
+                    <div className="h-48 bg-gray-100 relative overflow-hidden">
+                      <img 
+                        src={item.thumbnailUrl} 
+                        alt={item.title}
+                        className="w-full h-full object-cover opacity-90 group-hover:scale-105 transition-transform duration-500"
+                      />
+                      {!isOwner && (
+                         <div className="absolute top-3 right-3 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full font-medium border border-white/20">
+                           Community
                          </div>
-                       )}
-                       <span className="text-xs text-slate-500 font-medium">
-                         {isOwner ? 'You' : item.authorName}
-                       </span>
-                    </div>
-                    
-                    {/* Existing Stats */}
-                    <div className="flex items-center gap-4 text-xs text-slate-500 mt-auto">
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5" />
-                        {new Date(item.lastModified).toLocaleDateString()}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5" />
-                        {item.slideCount} slides
-                      </div>
-                    </div>
-
-                    <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
-                      <div className="flex items-center gap-2">
-                         {/* ... (Progress bar code remains the same) ... */}
-                      </div>
-                      
-                      {/* CONDITIONAL DELETE BUTTON */}
-                      {isOwner ? (
-                        <button 
-                          onClick={(e) => handleDelete(e, item.id)}
-                          className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
-                          title="Delete Presentation"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      ) : (
-                        <div className="p-2 text-slate-300" title="You can view and analyze, but cannot delete">
-                          <Lock className="w-4 h-4" />
-                        </div>
                       )}
                     </div>
+                    
+                    <div className="p-5 flex-1 flex flex-col">
+                      <h3 className="font-bold text-slate-900 mb-2 line-clamp-1 group-hover:text-brand-600 transition-colors">
+                        {item.title}
+                      </h3>
+                      
+                      {/* Author Info */}
+                      <div className="flex items-center gap-2 mb-4">
+                         {item.authorPhoto ? (
+                           <img src={item.authorPhoto} alt="Author" className="w-5 h-5 rounded-full border border-gray-200" />
+                         ) : (
+                           <div className="w-5 h-5 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center text-[10px] font-bold">
+                             {(item.authorName || '?').charAt(0)}
+                           </div>
+                         )}
+                         <span className="text-xs text-slate-500 font-medium">
+                           {isOwner ? 'You' : item.authorName}
+                         </span>
+                      </div>
+                      
+                      <div className="flex items-center gap-4 text-xs text-slate-500 mt-auto">
+                        <div className="flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5" />
+                          {new Date(item.lastModified).toLocaleDateString()}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5" />
+                          {item.slideCount} slides
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                           <div className="h-1.5 w-16 bg-gray-100 rounded-full overflow-hidden">
+                             <div 
+                               className="h-full bg-brand-500" 
+                               style={{ width: `${(item.slides.filter(s => s.status === 'SUCCESS').length / item.slides.length) * 100}%` }}
+                             />
+                           </div>
+                           <span className="text-[10px] text-slate-400 font-medium">
+                             {Math.round((item.slides.filter(s => s.status === 'SUCCESS').length / item.slides.length) * 100)}%
+                           </span>
+                        </div>
+                        
+                        {isOwner ? (
+                          <button 
+                            onClick={(e) => handleDelete(e, item.id)}
+                            className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <div className="p-2 text-slate-300" title="You can view and analyze, but cannot delete">
+                            <Lock className="w-4 h-4" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
       </main>
     </div>
   );
 };
-
-
