@@ -7,6 +7,7 @@ import { savePresentation } from './services/storageService';
 import { authService, GoogleUser } from './services/authService'; // Import Service
 import { AppState, Presentation } from './types';
 import 'katex/dist/katex.min.css';
+import { Analytics } from "@vercel/analytics/react";
 
 
 export default function App() {
@@ -258,7 +259,8 @@ export default function App() {
           Made with <span className="text-red-400 animate-pulse">❤️</span> by Naman Jindal
         </p>
       </footer>
-      
+
+      <Analytics />
     </div>
   );
 }
