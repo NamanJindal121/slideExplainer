@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -19,7 +18,10 @@ import {
   Trash2,
   Layers,
   GripVertical,
-  Save
+  GripHorizontal,
+  Save,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 import { Slide, Presentation, User } from '../types';
 import { analyzeSlideImage } from '../services/geminiService';
@@ -47,7 +49,21 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
 
   // Layout State
   const [panelWidth, setPanelWidth] = useState(600);
+  const [imageHeight, setImageHeight] = useState(300);
   const [isResizing, setIsResizing] = useState(false);
+  
+  // NEW: Font Size State
+  const [fontSize, setFontSize] = useState(16);
+
+  // NEW: Track mobile state for layout
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    setImageHeight(window.innerHeight * 0.4);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   // Track auto-fetching to prevent double calls
   const processingRef = useRef<Set<string>>(new Set());
@@ -80,28 +96,41 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
   };
 
   // --- Resizing Logic ---
-  const startResizing = (e: React.MouseEvent) => {
-    e.preventDefault();
+  const startResizing = (e: React.MouseEvent | React.TouchEvent) => {
+    // e.preventDefault(); 
     setIsResizing(true);
   };
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
+    const handleMove = (e: MouseEvent | TouchEvent) => {
       if (!isResizing) return;
-      const newWidth = window.innerWidth - e.clientX;
-      if (newWidth > 300 && newWidth < window.innerWidth * 0.8) {
-        setPanelWidth(newWidth);
+      
+      if (isMobile) {
+        const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+        const newHeight = clientY - 64; // Approximate header offset
+        if (newHeight > 100 && newHeight < window.innerHeight - 150) {
+          setImageHeight(newHeight);
+        }
+      } else {
+        const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+        const newWidth = window.innerWidth - clientX;
+        if (newWidth > 300 && newWidth < window.innerWidth * 0.8) {
+          setPanelWidth(newWidth);
+        }
       }
     };
 
-    const handleMouseUp = () => {
+    const handleEnd = () => {
       setIsResizing(false);
     };
 
     if (isResizing) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'col-resize';
+      window.addEventListener('mousemove', handleMove);
+      window.addEventListener('mouseup', handleEnd);
+      window.addEventListener('touchmove', handleMove);
+      window.addEventListener('touchend', handleEnd);
+      
+      document.body.style.cursor = isMobile ? 'row-resize' : 'col-resize';
       document.body.style.userSelect = 'none';
     } else {
       document.body.style.cursor = 'default';
@@ -109,12 +138,14 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
     }
 
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleEnd);
+      window.removeEventListener('touchmove', handleMove);
+      window.removeEventListener('touchend', handleEnd);
       document.body.style.cursor = 'default';
       document.body.style.userSelect = 'auto';
     };
-  }, [isResizing]);
+  }, [isResizing, isMobile]);
 
   // --- Queue Processing Logic ---
   useEffect(() => {
@@ -210,6 +241,9 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
     if (currentIndex < slides.length - 1) setCurrentIndex(i => i + 1);
   };
 
+  const handleZoomIn = () => setFontSize(prev => Math.min(prev + 2, 32));
+  const handleZoomOut = () => setFontSize(prev => Math.max(prev - 2, 12));
+
   const addToQueue = (e: React.MouseEvent, slideId: string) => {
     e.stopPropagation();
     if (!queue.includes(slideId)) {
@@ -222,7 +256,7 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
   };
 
   return (
-    <div className="h-screen w-screen flex bg-gray-50 overflow-hidden text-slate-900 font-sans">
+    <div className="h-[100dvh] w-screen flex bg-gray-50 overflow-hidden text-slate-900 font-sans">
       
       {/* Sidebar (Thumbnails) */}
       <div 
@@ -419,31 +453,43 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
         </header>
 
         {/* Split View */}
-        <div className="flex-1 flex flex-row overflow-hidden relative">
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
           
           {/* Left: Image Viewer */}
-          <div className="flex-1 bg-gray-100 relative flex items-center justify-center p-8 overflow-auto min-w-[300px]">
-            <div className="relative shadow-xl rounded-lg overflow-hidden max-w-full max-h-full bg-white ring-1 ring-gray-900/5">
+          <div 
+            style={isMobile ? { height: imageHeight, flex: 'none' } : {}}
+            className="flex-none md:h-auto md:flex-1 bg-gray-100 relative flex items-center justify-center p-4 md:p-8 overflow-hidden md:overflow-auto border-b md:border-b-0 md:border-r border-gray-200"
+          >
+            <div className="relative shadow-xl rounded-lg overflow-hidden w-full h-full md:w-auto md:h-auto md:max-w-full md:max-h-full bg-white ring-1 ring-gray-900/5 flex items-center justify-center">
               <img 
                 src={currentSlide.imageUrl} 
                 alt="Current Slide" 
-                className="max-w-full max-h-[80vh] object-contain"
+                className="max-w-full max-h-full object-contain"
               />
             </div>
           </div>
 
-          {/* Resize Handle */}
+          {/* Resize Handle (Desktop) */}
           <div 
-            className="w-4 bg-gray-50 border-l border-r border-gray-200 flex items-center justify-center cursor-col-resize hover:bg-blue-50 transition-colors z-20 shrink-0"
+            className="hidden md:flex w-4 bg-gray-50 border-l border-r border-gray-200 items-center justify-center cursor-col-resize hover:bg-blue-50 transition-colors z-20 shrink-0"
             onMouseDown={startResizing}
           >
             <GripVertical className="w-4 h-4 text-slate-300" />
           </div>
 
+          {/* Resize Handle (Mobile) */}
+          <div 
+            className="md:hidden h-6 bg-gray-50 border-t border-b border-gray-200 flex items-center justify-center cursor-row-resize active:bg-blue-50 transition-colors z-20 shrink-0 touch-none"
+            onMouseDown={startResizing}
+            onTouchStart={startResizing}
+          >
+            <GripHorizontal className="w-4 h-4 text-slate-300" />
+          </div>
+
           {/* Right: AI Analysis */}
           <div 
-            style={{ width: panelWidth }}
-            className="bg-white flex flex-col relative z-10 shadow-[-4px_0_24px_-12px_rgba(0,0,0,0.1)] shrink-0 max-w-[80vw]"
+            style={!isMobile ? { width: panelWidth } : {}}
+            className="flex-1 md:flex-none bg-white flex flex-col relative z-10 shadow-[-4px_0_24px_-12px_rgba(0,0,0,0.1)] shrink-0 md:max-w-[80vw] w-full min-h-0"
           >
             
             {/* Analysis Header */}
@@ -452,7 +498,24 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
                 <Sparkles className="w-5 h-5" />
                 <span>Explanation</span>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-1 md:gap-2">
+                <div className="flex items-center bg-gray-50 rounded-lg border border-gray-100 mr-2">
+                  <button 
+                    onClick={handleZoomOut}
+                    title="Decrease Font Size"
+                    className="p-2 hover:bg-white hover:text-brand-600 text-slate-400 rounded-l-lg transition-colors border-r border-gray-100"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={handleZoomIn}
+                    title="Increase Font Size"
+                    className="p-2 hover:bg-white hover:text-brand-600 text-slate-400 rounded-r-lg transition-colors"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+                </div>
+
                 <button 
                   onClick={openPromptEditor}
                   title="Edit Prompt"
@@ -490,7 +553,10 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
                   </button>
                 </div>
               ) : (
-                <div className="markdown-content text-slate-800">
+                <div 
+                  className="markdown-content text-slate-800 transition-all duration-200"
+                  style={{ fontSize: `${fontSize}px`, lineHeight: '1.6' }}
+                >
                   {currentSlide.explanation ? (
                      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{currentSlide.explanation}</ReactMarkdown>
                   ) : (
