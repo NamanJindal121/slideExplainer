@@ -55,6 +55,9 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
   // NEW: Font Size State
   const [fontSize, setFontSize] = useState(16);
 
+  // NEW: Model Selection
+  const [selectedModel, setSelectedModel] = useState("gemini-2.5-flash");
+
   // NEW: Track mobile state for layout
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
@@ -174,7 +177,7 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
       }
     };
     processQueue();
-  }, [slides, queue]);
+  }, [slides, queue, selectedModel]);
 
   const triggerAnalysis = async (slideId: string, customPrompt?: string) => {
     const slideIndex = slides.findIndex(s => s.id === slideId);
@@ -192,7 +195,7 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
       const slide = slidesCopyLoading[slideIndex];
       const promptToUse = customPrompt || slide.customPrompt || "Explain this slide in detail. Use bullet points and clear formatting.";
       
-      const { text, usage } = await analyzeSlideImage(slide.imageUrl, promptToUse);
+      const { text, usage } = await analyzeSlideImage(slide.imageUrl, promptToUse, selectedModel);
 
       // Update Success
       const slidesCopySuccess = [...slidesCopyLoading];
@@ -498,7 +501,17 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
                 <Sparkles className="w-5 h-5" />
                 <span>Explanation</span>
               </div>
-              <div className="flex gap-1 md:gap-2">
+              <div className="flex gap-1 md:gap-2 items-center">
+                
+                <select 
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="text-xs h-8 border border-gray-200 rounded-lg px-2 bg-gray-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500 mr-2 cursor-pointer"
+                >
+                  <option value="gemini-2.5-flash">Auto</option>
+                  <option value="gemini-3-pro-preview">Thinking</option>
+                </select>
+
                 <div className="flex items-center bg-gray-50 rounded-lg border border-gray-100 mr-2">
                   <button 
                     onClick={handleZoomOut}
@@ -560,9 +573,28 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
                   {currentSlide.explanation ? (
                      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{currentSlide.explanation}</ReactMarkdown>
                   ) : (
-                    <div className="text-center text-slate-400 mt-20">
-                      <p>Waiting for analysis...</p>
-                      <p className="text-xs mt-2 opacity-75">Analysis is queued to respect rate limits.</p>
+                    <div className="text-center text-slate-400 mt-20 flex flex-col items-center">
+                      {queue.includes(currentSlide.id) ? (
+                        <>
+                          <div className="w-12 h-12 mb-4 rounded-full bg-brand-50 flex items-center justify-center">
+                            <Layers className="w-6 h-6 text-brand-300 animate-pulse" />
+                          </div>
+                          <p>Waiting for analysis...</p>
+                          <p className="text-xs mt-2 opacity-75">Position in queue: {queue.indexOf(currentSlide.id) + 1}</p>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-12 h-12 mb-4 opacity-20" />
+                          <p>Ready to analyze.</p>
+                          <p className="text-xs mt-2 opacity-75 mb-4">Add this slide to the queue to generate an explanation.</p>
+                          <button 
+                            onClick={(e) => addToQueue(e, currentSlide.id)}
+                            className="px-4 py-2 bg-brand-50 text-brand-700 rounded-lg text-sm font-medium hover:bg-brand-100 transition-colors border border-brand-200"
+                          >
+                            Add to Queue
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
