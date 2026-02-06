@@ -8,7 +8,8 @@ import {
   query, 
   orderBy,
   increment, 
-  serverTimestamp
+  serverTimestamp,
+  addDoc
 } from 'firebase/firestore';
 import { 
   ref, 
@@ -108,5 +109,54 @@ export const trackAnalysisUsage = async (userId: string, userName: string, token
     }, { merge: true });
   } catch (error) {
     console.error("Failed to track usage:", error);
+  }
+};
+
+export const logAnalysisEvent = async (data: {
+  userId: string;
+  userName: string;
+  presentationId: string;
+  slideId: string;
+  modelId: string;
+  tokens: {
+    prompt: number;
+    candidates: number;
+    total: number;
+  };
+  contextItemCount: number;
+  isSuccess: boolean;
+  errorMessage?: string;
+}) => {
+  try {
+    const logsRef = collection(db, 'logs_analysis');
+    await addDoc(logsRef, {
+      ...data,
+      timestamp: serverTimestamp()
+    });
+    
+    // Also update aggregate stats if successful
+    if (data.isSuccess) {
+       await trackAnalysisUsage(data.userId, data.userName, data.tokens.total);
+    }
+  } catch (error) {
+    console.error("Failed to log analysis event:", error);
+  }
+};
+
+export const logUploadEvent = async (data: {
+  userId: string;
+  userName: string;
+  presentationId: string;
+  slideCount: number;
+  title: string;
+}) => {
+  try {
+    const logsRef = collection(db, 'logs_uploads');
+    await addDoc(logsRef, {
+      ...data,
+      timestamp: serverTimestamp()
+    });
+  } catch (error) {
+    console.error("Failed to log upload event:", error);
   }
 };

@@ -21,11 +21,15 @@ import {
   GripHorizontal,
   Save,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  CheckSquare,
+  Square,
+  FileText,
+  Image as ImageIcon
 } from 'lucide-react';
-import { Slide, Presentation, User } from '../types';
+import { Slide, Presentation, User, ContextItem } from '../types';
 import { analyzeSlideImage } from '../services/geminiService';
-import { savePresentation, trackAnalysisUsage } from '../services/storageService';
+import { savePresentation, logAnalysisEvent } from '../services/storageService';
 
 interface SlideViewerProps {
   initialPresentation: Presentation;
@@ -57,6 +61,10 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
 
   // NEW: Model Selection
   const [selectedModel, setSelectedModel] = useState("gemini-2.5-flash");
+
+  // NEW: Context Selection State
+  const [contextItems, setContextItems] = useState<ContextItem[]>([]);
+  const [showContextModal, setShowContextModal] = useState(false);
 
   // NEW: Track mobile state for layout
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -191,11 +199,16 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
     slidesCopyLoading[slideIndex] = { ...slidesCopyLoading[slideIndex], status: 'LOADING' };
     handleSave(slidesCopyLoading); // Save loading state (optional, but good for UI consistency)
 
+    // Determine context outside try-catch for visibility
+    const activeContext = slideId === currentSlide.id 
+      ? contextItems.filter(ci => ci.slideId !== slideId)
+      : [];
+
     try {
       const slide = slidesCopyLoading[slideIndex];
       const promptToUse = customPrompt || slide.customPrompt || "Explain this slide in detail. Use bullet points and clear formatting.";
       
-      const { text, usage } = await analyzeSlideImage(slide.imageUrl, promptToUse, selectedModel);
+      const { text, usage } = await analyzeSlideImage(slide.imageUrl, promptToUse, selectedModel, activeContext);
 
       // Update Success
       const slidesCopySuccess = [...slidesCopyLoading];
@@ -212,14 +225,41 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
         }
       };
       handleSave(slidesCopySuccess);
-      trackAnalysisUsage(currentUser.id, currentUser.name, usage.totalTokenCount);
       
+      // LOG SUCCCESS
+      await logAnalysisEvent({
+        userId: currentUser.id,
+        userName: currentUser.name,
+        presentationId: presentation.id,
+        slideId: slide.id,
+        modelId: selectedModel,
+        tokens: {
+          prompt: usage.promptTokenCount || 0,
+          candidates: usage.candidatesTokenCount || 0,
+          total: usage.totalTokenCount || 0
+        },
+        contextItemCount: activeContext.length,
+        isSuccess: true
+      });
       
     } catch (error) {
       console.error(error);
       const slidesCopyError = [...slidesCopyLoading];
       slidesCopyError[slideIndex] = { ...slidesCopyError[slideIndex], status: 'ERROR' };
       handleSave(slidesCopyError);
+
+      // LOG FAILURE
+      await logAnalysisEvent({
+        userId: currentUser.id,
+        userName: currentUser.name,
+        presentationId: presentation.id,
+        slideId: slideId, // Use parameter ID as local var might be invalid
+        modelId: selectedModel,
+        tokens: { prompt: 0, candidates: 0, total: 0 },
+        contextItemCount: activeContext.length,
+        isSuccess: false,
+        errorMessage: String(error)
+      });
     } finally {
       processingRef.current.delete(slideId);
     }
@@ -246,6 +286,39 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
 
   const handleZoomIn = () => setFontSize(prev => Math.min(prev + 2, 32));
   const handleZoomOut = () => setFontSize(prev => Math.max(prev - 2, 12));
+
+  const toggleContext = (slide: Slide, type: 'image' | 'explanation', value: boolean) => {
+    setContextItems((prev) => {
+      const existing = prev.find((item) => item.slideId === slide.id);
+      if (existing) {
+        // Update existing
+        const updated = {
+          ...existing,
+          includeImage: type === 'image' ? value : existing.includeImage,
+          includeExplanation: type === 'explanation' ? value : existing.includeExplanation,
+        };
+
+        // If both false, remove
+        if (!updated.includeImage && !updated.includeExplanation) {
+          return prev.filter((item) => item.slideId !== slide.id);
+        }
+
+        return prev.map((item) => (item.slideId === slide.id ? updated : item));
+      } else {
+        if (!value) return prev; // Don't add if setting false on non-existent
+        // Add new
+        const newItem: ContextItem = {
+          slideId: slide.id,
+          pageNumber: slide.pageNumber,
+          imageUrl: slide.imageUrl,
+          explanation: slide.explanation,
+          includeImage: type === 'image' ? value : false,
+          includeExplanation: type === 'explanation' ? value : false,
+        };
+        return [...prev, newItem];
+      }
+    });
+  };
 
   const addToQueue = (e: React.MouseEvent, slideId: string) => {
     e.stopPropagation();
@@ -614,14 +687,70 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
                   </button>
                 </div>
                 
-                <div className="flex-1 flex flex-col">
-                  <p className="text-sm text-slate-500 mb-2">Instructions for Gemini</p>
-                  <textarea
-                    value={customPromptInput}
-                    onChange={(e) => setCustomPromptInput(e.target.value)}
-                    className="flex-1 w-full bg-white border border-gray-200 rounded-xl p-4 text-slate-800 focus:ring-2 focus:ring-brand-500 focus:border-transparent focus:outline-none resize-none mb-4 shadow-inner text-base"
-                    placeholder="Ask Gemini something specific about this slide..."
-                  />
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  <div className="flex-shrink-0 mb-4 h-1/3 flex flex-col">
+                      <p className="text-sm text-slate-500 mb-2">Instructions for Gemini</p>
+                      <textarea
+                        value={customPromptInput}
+                        onChange={(e) => setCustomPromptInput(e.target.value)}
+                        className="flex-1 w-full bg-white border border-gray-200 rounded-xl p-4 text-slate-800 focus:ring-2 focus:ring-brand-500 focus:border-transparent focus:outline-none resize-none shadow-inner text-base"
+                        placeholder="Ask Gemini something specific about this slide..."
+                      />
+                  </div>
+
+                  <div className="flex-1 flex flex-col overflow-hidden border-t pt-4">
+                       <div className="flex justify-between items-center mb-3">
+                            <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                              <CheckSquare className="w-4 h-4 text-brand-500" />
+                              Reference Other Slides
+                            </label>
+                            <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-full">Select context to include</span>
+                       </div>
+                       <div className="flex-1 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
+                            {slides.filter(s => s.id !== currentSlide.id).map(slide => {
+                                const ctxItem = contextItems.find(c => c.slideId === slide.id);
+                                return (
+                                    <div key={slide.id} className={`p-3 rounded-lg border transition-all ${
+                                      (ctxItem?.includeImage || ctxItem?.includeExplanation) 
+                                        ? 'bg-brand-50/50 border-brand-200 shadow-sm' 
+                                        : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                                    }`}>
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="font-semibold text-slate-700 text-sm">Slide {slide.pageNumber}</span>
+                                            {slide.explanation && (
+                                              <span className="text-[10px] font-medium text-green-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-100">
+                                                Analyzed
+                                              </span>
+                                            )}
+                                        </div>
+                                        <div className="flex gap-4">
+                                            <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-600 hover:text-slate-900">
+                                                <input 
+                                                    type="checkbox"
+                                                    className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                                    checked={ctxItem?.includeImage || false}
+                                                    onChange={(e) => toggleContext(slide, 'image', e.target.checked)}
+                                                />
+                                                Image
+                                            </label>
+                                            <label className={`flex items-center gap-2 cursor-pointer text-sm ${
+                                              !slide.explanation ? 'opacity-40 pointer-events-none text-slate-400' : 'text-slate-600 hover:text-slate-900'
+                                            }`}>
+                                                <input 
+                                                    type="checkbox"
+                                                    className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                                    checked={ctxItem?.includeExplanation || false} // Logic: Only checked if valid
+                                                    disabled={!slide.explanation}
+                                                    onChange={(e) => toggleContext(slide, 'explanation', e.target.checked)}
+                                                />
+                                                Explanation
+                                            </label>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                       </div>
+                  </div>
                 </div>
                 
                 <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">

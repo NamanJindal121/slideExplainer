@@ -38,3 +38,12 @@ export interface Presentation {
   authorName: string;
   authorPhoto?: string;
 }
+
+export interface ContextItem {
+  slideId: string;
+  pageNumber: number;
+  imageUrl?: string;
+  explanation?: string | null;
+  includeImage: boolean;
+  includeExplanation: boolean;
+}

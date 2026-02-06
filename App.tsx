@@ -3,7 +3,7 @@ import { Upload, FileText, Loader2, AlertCircle, ArrowLeft, LogIn } from 'lucide
 import { SlideViewer } from './components/SlideViewer';
 import { Dashboard } from './components/Dashboard';
 import { processPdf } from './services/pdfService';
-import { savePresentation } from './services/storageService';
+import { savePresentation, logUploadEvent } from './services/storageService';
 import { authService, GoogleUser } from './services/authService'; // Import Service
 import { AppState, Presentation } from './types';
 import 'katex/dist/katex.min.css';
@@ -91,6 +91,16 @@ export default function App() {
       };
 
       await savePresentation(newPresentation);
+
+      // LOG UPLOAD
+      await logUploadEvent({
+        userId: user.uid,
+        userName: user.name || 'Anonymous',
+        presentationId: newPresentation.id,
+        slideCount: newPresentation.slideCount,
+        title: newPresentation.title
+      });
+
       setCurrentPresentation(newPresentation);
       setAppState('VIEWER');
     } catch (err: any) {
