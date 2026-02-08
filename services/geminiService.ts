@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, Part } from "@google/generative-ai";
-import { ContextItem } from "../types";
+import { ContextItem, Slide } from "../types";
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
@@ -101,3 +101,36 @@ export const analyzeSlideImage = async (
     throw error;
   }
 };
+
+export const generatePresentationSummary = async (
+  slides: Slide[], 
+  modelId: string = "gemini-2.5-flash"
+) => {
+  try {
+    const model = genAI.getGenerativeModel({ model: modelId });
+
+    // 1. Construct the Text-Only Prompt
+    let prompt = "Please provide a comprehensive summary of this entire presentation based on the text content of the slides below. Explain everything in detail.\n\n";
+
+    slides.forEach(slide => {
+      prompt += `--- Slide ${slide.pageNumber} ---\n`;
+      // Fallback if textContent is empty (e.g. image-only slide)
+      prompt += slide.textContent ? slide.textContent : "[Image only slide]";
+      prompt += "\n\n";
+    });
+
+    // 2. Send Request (Text only is very cheap)
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    
+    return {
+      text: response.text(),
+      usage: result.response.usageMetadata
+    };
+
+  } catch (error) {
+    console.error("Gemini Summary Failed:", error);
+    throw error;
+  }
+};
+

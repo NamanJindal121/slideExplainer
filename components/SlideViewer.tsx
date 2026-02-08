@@ -25,11 +25,13 @@ import {
   CheckSquare,
   Square,
   FileText,
-  Image as ImageIcon
+  Image as ImageIcon,
+  BookOpen
 } from 'lucide-react';
 import { Slide, Presentation, User, ContextItem } from '../types';
-import { analyzeSlideImage } from '../services/geminiService';
+import { analyzeSlideImage, generatePresentationSummary } from '../services/geminiService';
 import { savePresentation, logAnalysisEvent } from '../services/storageService';
+import { performOCR } from '../services/pdfService';
 
 interface SlideViewerProps {
   initialPresentation: Presentation;
@@ -62,9 +64,18 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
   // NEW: Model Selection
   const [selectedModel, setSelectedModel] = useState("gemini-2.5-flash");
 
+  // Summary State
+  const [summary, setSummary] = useState<string | null>(initialPresentation.summary || null);
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState<number>(0);
+  const [isProcessingOCR, setIsProcessingOCR] = useState(false);
+
   // NEW: Context Selection State
   const [contextItems, setContextItems] = useState<ContextItem[]>([]);
   const [showContextModal, setShowContextModal] = useState(false);
+
+  // NEW: View Mode State
+  const [viewMode, setViewMode] = useState<'slide' | 'summary'>('slide');
 
   // NEW: Track mobile state for layout
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -271,6 +282,77 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
     setIsEditingPrompt(false);
   };
 
+  const handleGlobalSummary = async (forceRegenerate = false) => {
+    setViewMode('summary');
+    if (presentation.summary && !forceRegenerate) {
+        setSummary(presentation.summary);
+        return;
+    }
+
+    setIsSummarizing(true);
+    setSummary(null);
+    setOcrProgress(0);
+
+    try {
+      // 1. Check existing text density
+      let effectiveSlides = [...slides];
+      const totalTextLen = slides.reduce((acc, slide) => acc + (slide.textContent?.length || 0), 0);
+      
+      // If average text per slide is < 40 chars, assume it's an image-PDF
+      const isImageBased = totalTextLen / slides.length < 40;
+      let result;
+
+      if (isImageBased) {
+        setIsProcessingOCR(true);
+        // Run OCR client-side
+        effectiveSlides = await performOCR(slides, (progress) => {
+          setOcrProgress(progress);
+        });
+        setIsProcessingOCR(false);
+        handleSave(effectiveSlides); // Save extracted text for future
+        
+        result = await generatePresentationSummary(effectiveSlides);
+      } else {
+        console.log("Using Text Mode Summary (Low Cost)");
+        result = await generatePresentationSummary(slides);
+      }
+
+      setSummary(result.text);
+
+      // Save summary to presentation
+      const updatedPresentation = {
+        ...presentation,
+        summary: result.text,
+        slides: effectiveSlides // Also save any potential OCR updates
+      };
+      setPresentation(updatedPresentation);
+      await savePresentation(updatedPresentation);
+
+      // Log it
+      await logAnalysisEvent({
+        userId: currentUser.id,
+        userName: currentUser.name,
+        presentationId: presentation.id,
+        slideId: 'GLOBAL_SUMMARY',
+        modelId: selectedModel,
+        tokens: {
+          prompt: result.usage?.promptTokenCount || 0,
+          candidates: result.usage?.candidatesTokenCount || 0,
+          total: result.usage?.totalTokenCount || 0
+        },
+        contextItemCount: slides.length,
+        isSuccess: true
+      });
+
+    } catch (e: any) {
+      console.error(e);
+      alert(`Error: ${e.message}`);
+    } finally {
+      setIsSummarizing(false);
+      setIsProcessingOCR(false);
+    }
+  };
+
   const openPromptEditor = () => {
     setCustomPromptInput(currentSlide.customPrompt || "");
     setIsEditingPrompt(true);
@@ -351,6 +433,31 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
           </button>
         </div>
         
+        <div className="p-4 border-b border-gray-100 bg-white">
+             <button
+               onClick={() => handleGlobalSummary(false)}
+               disabled={isSummarizing || isProcessingOCR}
+               className={`w-full py-2.5 ${viewMode === 'summary' ? 'bg-indigo-50 border-2 border-indigo-600 text-indigo-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'} rounded-xl disabled:opacity-70 disabled:cursor-not-allowed text-sm font-medium transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-2`}
+             >
+               {isProcessingOCR ? (
+                 <span className="flex items-center gap-2">
+                   <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                   Scanning Text ({ocrProgress}%) (takes ~1-2 mins)
+                 </span>
+               ) : isSummarizing ? (
+                 <span className="flex items-center gap-2">
+                   <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                   Generating Summary...
+                 </span> 
+               ) : (
+                 <>
+                   <BookOpen className="w-4 h-4" />
+                   <span>{presentation.summary ? 'View Summary' : 'Summarize Deck'}</span>
+                 </>
+               )}
+             </button>
+        </div>
+
         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/50">
           {slides.map((slide, index) => {
             const isInQueue = queue.includes(slide.id);
@@ -359,9 +466,9 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
             return (
               <div 
                 key={slide.id}
-                onClick={() => setCurrentIndex(index)}
+                onClick={() => { setCurrentIndex(index); setViewMode('slide'); }}
                 className={`p-3 rounded-xl cursor-pointer border transition-all duration-200 group flex gap-3 items-center relative ${
-                  index === currentIndex 
+                  index === currentIndex && viewMode === 'slide'
                     ? 'border-brand-500 bg-white ring-1 ring-brand-500 shadow-sm' 
                     : 'border-transparent hover:bg-white hover:shadow-sm hover:border-gray-200'
                 }`}
@@ -571,19 +678,21 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
             {/* Analysis Header */}
             <div className="p-3 border-b border-gray-100 flex justify-between items-center bg-white h-14 shrink-0">
               <div className="flex items-center gap-2 text-brand-700 font-semibold">
-                <Sparkles className="w-5 h-5" />
-                <span>Explanation</span>
+                {viewMode === 'summary' ? <BookOpen className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
+                <span>{viewMode === 'summary' ? 'Presentation Summary' : 'Explanation'}</span>
               </div>
               <div className="flex gap-1 md:gap-2 items-center">
                 
-                <select 
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="text-xs h-8 border border-gray-200 rounded-lg px-2 bg-gray-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500 mr-2 cursor-pointer"
-                >
-                  <option value="gemini-2.5-flash">Auto</option>
-                  <option value="gemini-3-pro-preview">Thinking</option>
-                </select>
+                {viewMode === 'slide' && (
+                  <select 
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    className="text-xs h-8 border border-gray-200 rounded-lg px-2 bg-gray-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500 mr-2 cursor-pointer"
+                  >
+                    <option value="gemini-2.5-flash">Auto</option>
+                    <option value="gemini-3-pro-preview">Thinking</option>
+                  </select>
+                )}
 
                 <div className="flex items-center bg-gray-50 rounded-lg border border-gray-100 mr-2">
                   <button 
@@ -601,28 +710,80 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({ initialPresentation, o
                     <ZoomIn className="w-4 h-4" />
                   </button>
                 </div>
-
-                <button 
-                  onClick={openPromptEditor}
-                  title="Edit Prompt"
-                  className="p-2 hover:bg-blue-50 text-slate-500 hover:text-brand-600 rounded-lg transition-colors"
-                >
-                  <Edit2 className="w-4 h-4" />
-                </button>
-                <button 
-                  onClick={handleRegenerate}
-                  title="Regenerate"
-                  className="p-2 hover:bg-blue-50 text-slate-500 hover:text-brand-600 rounded-lg transition-colors"
-                  disabled={currentSlide.status === 'LOADING'}
-                >
-                  <RefreshCw className={`w-4 h-4 ${currentSlide.status === 'LOADING' ? 'animate-spin' : ''}`} />
-                </button>
+                
+                {viewMode === 'summary' ? (
+                  <>
+                    <button 
+                      onClick={() => handleGlobalSummary(true)}
+                      title="Regenerate Summary"
+                      className="p-2 hover:bg-blue-50 text-slate-500 hover:text-brand-600 rounded-lg transition-colors"
+                      disabled={isSummarizing || isProcessingOCR}
+                    >
+                      <RefreshCw className={`w-4 h-4 ${(isSummarizing || isProcessingOCR) ? 'animate-spin' : ''}`} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button 
+                      onClick={openPromptEditor}
+                      title="Edit Prompt"
+                      className="p-2 hover:bg-blue-50 text-slate-500 hover:text-brand-600 rounded-lg transition-colors"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={handleRegenerate}
+                      title="Regenerate"
+                      className="p-2 hover:bg-blue-50 text-slate-500 hover:text-brand-600 rounded-lg transition-colors"
+                      disabled={currentSlide.status === 'LOADING'}
+                    >
+                      <RefreshCw className={`w-4 h-4 ${currentSlide.status === 'LOADING' ? 'animate-spin' : ''}`} />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
             {/* Content Area */}
-            <div className="flex-1 overflow-y-auto p-6 scroll-smooth bg-white">
-              {currentSlide.status === 'LOADING' ? (
+            <div className="flex-1 overflow-y-auto p-6 scroll-smooth bg-white relative">
+              
+              {viewMode === 'summary' ? (
+                 <div className="h-full flex flex-col">
+                   {isSummarizing || isProcessingOCR || (viewMode === 'summary' && !summary) ? (
+                      <div className="flex flex-col items-center justify-center h-full space-y-4">
+                        <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                        <p className="text-slate-500 font-medium animate-pulse">
+                          {isProcessingOCR ? `Scanning Text...` : `Generating Summary...`}
+                        </p>
+                      </div>
+                   ) : (
+                      <div className="flex-1">
+                        <div 
+                          className="markdown-content text-slate-800 transition-all duration-200"
+                          style={{ fontSize: `${fontSize}px`, lineHeight: '1.6' }}
+                        >
+                          <ReactMarkdown>{summary || ""}</ReactMarkdown>
+                        </div>
+                        <div className="mt-8 pt-6 border-t border-gray-100 flex gap-3">
+                           <button 
+                              onClick={() => {
+                                  const blob = new Blob([summary || ""], { type: 'text/markdown' });
+                                  const url = URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  a.download = `Summary - ${presentation.title}.md`;
+                                  a.click();
+                              }}
+                              className="px-4 py-2 text-slate-600 hover:bg-gray-100 rounded-lg text-sm font-medium flex items-center gap-2 border border-gray-200"
+                           >
+                               <Save className="w-4 h-4" />
+                               Save as Markdown
+                           </button>
+                        </div>
+                      </div>
+                   )}
+                 </div>
+              ) : currentSlide.status === 'LOADING' ? (
                 <div className="flex flex-col items-center justify-center h-full space-y-4">
                   <div className="w-12 h-12 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
                   <p className="text-slate-500 font-medium animate-pulse">Analyzing slide content...</p>

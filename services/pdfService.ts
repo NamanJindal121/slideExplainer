@@ -1,10 +1,34 @@
 import * as pdfjsLib from 'pdfjs-dist';
+import { createWorker } from 'tesseract.js';
 import { Slide } from '../types';
 
 // Initialize PDF.js worker
 // Using a specific version to ensure compatibility. 
 // Ideally this matches the version of pdfjs-dist installed, but since we rely on CDN for worker in this setup:
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+
+// Helper: Run OCR on a list of slides that lack text
+export const performOCR = async (slides: Slide[], onProgress: (progress: number) => void): Promise<Slide[]> => {
+  const worker = await createWorker('eng');
+  const updatedSlides = [...slides];
+  let processedCount = 0;
+
+  for (let i = 0; i < updatedSlides.length; i++) {
+    const slide = updatedSlides[i];
+    
+    // Only run OCR if textContent is missing or too short (likely image-only)
+    if (!slide.textContent || slide.textContent.length < 50) {
+      const { data: { text } } = await worker.recognize(slide.imageUrl);
+      updatedSlides[i] = { ...slide, textContent: text };
+    }
+    
+    processedCount++;
+    onProgress(Math.round((processedCount / updatedSlides.length) * 100));
+  }
+
+  await worker.terminate();
+  return updatedSlides;
+};
 
 export const processPdf = async (file: File): Promise<Slide[]> => {
   const arrayBuffer = await file.arrayBuffer();
@@ -44,10 +68,18 @@ export const processPdf = async (file: File): Promise<Slide[]> => {
 
     const imageUrl = canvas.toDataURL('image/jpeg', 0.8);
     
+    // Extract Text (Native PDF Layer)
+    const textContentObj = await page.getTextContent();
+    const textContent = textContentObj.items
+      // @ts-ignore
+      .map((item: any) => item.str)
+      .join(' ');
+
     slides.push({
       id: `slide-${i}-${Date.now()}`,
       pageNumber: i,
       imageUrl: imageUrl,
+      textContent: textContent || "",
       explanation: null,
       status: 'IDLE',
       customPrompt: "Explain everything in this slide in detail. Break down key points, diagrams, and any text present.",

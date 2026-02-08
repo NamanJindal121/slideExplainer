@@ -4,6 +4,7 @@ export interface Slide {
   pageNumber: number;
   imageUrl: string;
   explanation: string | null;
+  textContent?: string;
   status: 'IDLE' | 'LOADING' | 'SUCCESS' | 'ERROR';
   customPrompt?: string;
   analyzedBy?: {
@@ -45,6 +46,7 @@ export interface Presentation {
   authorName: string;
   authorPhoto?: string;
   folderId?: string | null;
+  summary?: string;
 }
 
 export interface ContextItem {
