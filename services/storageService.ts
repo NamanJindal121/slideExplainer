@@ -19,7 +19,7 @@ import {
   listAll 
 } from 'firebase/storage';
 import { db, storage, auth } from './firebase';
-import { Presentation } from '../types';
+import { Presentation, Folder } from '../types';
 
 // Helper to get current user ID
 const getUserId = () => {
@@ -61,7 +61,8 @@ export const savePresentation = async (presentation: Presentation): Promise<void
       // Metadata to identify the author
       authorId: presentation.authorId || userId,
       authorName: presentation.authorName || userName,
-      authorPhoto: presentation.authorPhoto || userPhoto
+      authorPhoto: presentation.authorPhoto || userPhoto,
+      folderId: presentation.folderId || null
     };
 
     await setDoc(presRef, cloudPresentation);
@@ -142,7 +143,47 @@ export const logAnalysisEvent = async (data: {
     console.error("Failed to log analysis event:", error);
   }
 };
+// --- FOLDER MANAGEMENT ---
 
+export const createFolder = async (name: string): Promise<Folder> => {
+  const userId = getUserId();
+  const folderId = crypto.randomUUID();
+  
+  const folder: Folder = {
+    id: folderId,
+    name,
+    userId,
+    createdAt: Date.now()
+  };
+
+  await setDoc(doc(db, 'folders', folderId), folder);
+  return folder;
+};
+
+export const getFolders = async (): Promise<Folder[]> => {
+  const foldersRef = collection(db, 'folders');
+  const q = query(foldersRef, orderBy('createdAt', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => doc.data() as Folder);
+};
+
+export const deleteFolder = async (folderId: string) => {
+  // Move all items inside this folder to root? Or delete them? 
+  // For safety, let's move them to root (null).
+  const presentations = await getPresentations();
+  const inside = presentations.filter(p => p.folderId === folderId);
+  
+  for (const p of inside) {
+    await updatePresentationFolder(p.id, null);
+  }
+  
+  await deleteDoc(doc(db, 'folders', folderId));
+};
+
+export const updatePresentationFolder = async (presentationId: string, folderId: string | null) => {
+  const ref = doc(db, 'presentations', presentationId);
+  await setDoc(ref, { folderId }, { merge: true });
+};
 export const logUploadEvent = async (data: {
   userId: string;
   userName: string;

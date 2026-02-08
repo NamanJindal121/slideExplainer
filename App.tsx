@@ -14,6 +14,7 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>('LANDING');
   const [user, setUser] = useState<GoogleUser | null>(null);
   const [currentPresentation, setCurrentPresentation] = useState<Presentation | null>(null);
+  const [targetFolderId, setTargetFolderId] = useState<string | null>(null);
   
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +88,8 @@ export default function App() {
         // NEW FIELDS
         authorId: user.uid,
         authorName: user.name || 'Anonymous',
-        authorPhoto: user.photoURL || undefined
+        authorPhoto: user.photoURL || undefined,
+        folderId: targetFolderId // Assign to current folder
       };
 
       await savePresentation(newPresentation);
@@ -150,7 +152,10 @@ export default function App() {
     return (
       <Dashboard 
         user={mappedUser}
-        onNew={() => setAppState('UPLOAD')}
+        onNew={(folderId) => {
+          setTargetFolderId(folderId || null);
+          setAppState('UPLOAD');
+        }}
         onOpen={openPresentation}
         onLogout={() => authService.logout()} // Ensure this is async
       />

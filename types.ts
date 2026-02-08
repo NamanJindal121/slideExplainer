@@ -27,6 +27,13 @@ export interface User {
   avatarUrl?: string;
 }
 
+export interface Folder {
+  id: string;
+  name: string;
+  userId: string;
+  createdAt: number;
+}
+
 export interface Presentation {
   id: string;
   title: string;
@@ -37,6 +44,7 @@ export interface Presentation {
   authorId: string;
   authorName: string;
   authorPhoto?: string;
+  folderId?: string | null;
 }
 
 export interface ContextItem {
